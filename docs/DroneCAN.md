@@ -9,6 +9,8 @@ DroneCAN (formerly UAVCAN v0) is a lightweight protocol designed for reliable co
 | GPS | Supported | GNSS receivers via DroneCAN |
 | Battery Voltage | Supported | Voltage sensing from DroneCAN battery monitors |
 | Battery Current | Supported | Current sensing from DroneCAN battery monitors |
+| Optical Flow | Supported (not yet flight tested) | Flow modules broadcasting `com.hex.equipment.flow.Measurement` |
+| Rangefinder | Supported (not yet flight tested) | Range sensors broadcasting `range_sensor.Measurement` |
 | Parameter Get/Set | Supported | Read/write DroneCAN peripheral parameters via the configurator's DroneCAN tab |
 | ESC Control | Planned | Motor control via DroneCAN ESCs |
 | Dynamic Node Assignment | Supported | Automatically assign CAN node IDs to plug-and-play DroneCAN peripherals |
@@ -73,6 +75,28 @@ save
 ```
 
 Both voltage and current come from the same DroneCAN BatteryInfo message, so they update together when using a DroneCAN battery monitor.
+
+### Optical Flow and Rangefinder via DroneCAN
+
+DroneCAN optical flow modules (for example Holybro H-Flow, ARK Flow and CubePilot Here Flow) send flow as `com.hex.equipment.flow.Measurement` and the reading from their built-in lidar as `range_sensor.Measurement`. INAV only uses optical flow for position estimation when it also has a valid rangefinder reading, so normally both are enabled:
+
+```
+set opflow_hardware = DRONECAN
+set opflow_scale = 1.0
+set rangefinder_hardware = DRONECAN
+save
+```
+
+**`opflow_scale` must be 1.0.** DroneCAN flow modules report flow already calibrated in radians, so no scaling is needed. The default of 10.5 is for the CXOF sensor and would make flow speeds roughly ten times too small. Running the optical flow calibration should also give a value close to 1.0.
+
+**Check the axes before flying.** Mounting orientations differ between modules, so confirm `align_opflow` on the bench:
+
+1. `set debug_mode = FLOW_RAW` and view the debug values in the Configurator.
+2. Hold the aircraft over a textured surface and roll it left and right in place, without moving it sideways. `debug[0]` (flow X) should follow `debug[2]` (body rate X), with the same sign and roughly the same size.
+3. Pitch it forward and back the same way. `debug[1]` should follow `debug[3]`.
+4. If a pair has opposite signs, or X follows the pitch rate instead of the roll rate, change `align_opflow` and repeat.
+
+The rangefinder follows the first sensor it hears (by node ID and `sensor_id`) and ignores any others on the bus.
 
 ### Parameter Get/Set via DroneCAN
 
@@ -431,6 +455,12 @@ See `docs/development/msp/README.md` for the full MSP field layout.
 2. Check that `bat_voltage_src = CAN` and/or `current_meter_type = CAN` are set
 3. Some battery monitors need calibration - consult device documentation
 
+### Optical flow or rangefinder not working
+
+1. Verify `opflow_hardware = DRONECAN` and `rangefinder_hardware = DRONECAN` are set, then save and reboot
+2. Optical flow is only used while the rangefinder has a valid reading, so check the rangefinder first
+3. If position hold drifts or runs away, check `opflow_scale = 1.0` and verify the axes as described above
+
 ## DroneCAN Message Types
 
 INAV processes the following DroneCAN message types:
@@ -441,6 +471,8 @@ INAV processes the following DroneCAN message types:
 | Fix | 1060 | GNSS fix data (legacy) |
 | Auxiliary | 1061 | GNSS auxiliary data (HDOP, VDOP) |
 | BatteryInfo | 1092 | Battery voltage, current, temperature, SoC |
+| range_sensor.Measurement | 1050 | Rangefinder distance |
+| com.hex.equipment.flow.Measurement | 20200 | Integrated optical flow |
 | NodeStatus | 341 | Node health and status |
 
 ## Compatibility

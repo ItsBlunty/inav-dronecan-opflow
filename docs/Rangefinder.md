@@ -50,6 +50,10 @@ NRA15/NRA24 sensors can use US-D1_V0 or NRA protocol depending on firmware confi
 * **MSP** - External rangefinder via MSP protocol (UART/MSP)
 * **BENEWAKE** - Benewake LIDAR modules (TFmini, etc.) via serial protocol (UART)
 
+### CAN Bus Sensors
+
+* **DRONECAN** - Any DroneCAN node broadcasting `uavcan.equipment.range_sensor.Measurement`, such as the lidar built into DroneCAN optical flow modules. Requires a flight controller built with DroneCAN support; see [DroneCAN](DroneCAN.md#optical-flow-and-rangefinder-via-dronecan)
+
 ### Development/Testing
 
 * **FAKE** - Simulated rangefinder for testing without hardware
@@ -125,6 +129,10 @@ The port configuration depends on the selected driver:
 | `MSP` | Enable MSP on the UART connected to the external sensor or adapter | Match the configured MSP baud rate to the sender |
 
 Set `rangefinder_hardware` to the protocol sent by the device, then save and reboot. An MSP sender must supply `MSP2_SENSOR_RANGEFINDER` messages; it does not use the dedicated Rangefinder port function.
+
+### DroneCAN Rangefinders
+
+Connect the sensor to the flight controller's CAN port and set `rangefinder_hardware = DRONECAN`. No port function is needed. INAV follows the first sensor it hears (by node ID and `sensor_id`) and ignores the others, so it uses one sensor per bus. Set `inav_max_surface_altitude` to the sensor's reliable range.
 
 ## Optical Flow Integration
 

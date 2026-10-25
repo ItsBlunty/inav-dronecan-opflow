@@ -12,6 +12,8 @@
  *   GAP-N4  33rd unique node → table overflow rejected, count stays at 32
  *   GAP-S1  shouldAcceptTransfer: NodeStatus ✓, GetNodeInfo request ✓,
  *           GetNodeInfo response ✓, unknown ID ✗
+ *           range_sensor.Measurement ✓, com.hex.equipment.flow.Measurement ✓
+ *           (and both dispatched to their io/ receive functions)
  */
 
 #include "gtest/gtest.h"
@@ -30,6 +32,8 @@ extern "C" {
 #include "uavcan.protocol.param.GetSet.h"
 #include "uavcan.protocol.param.ExecuteOpcode_res.h"
 #include "uavcan.protocol.RestartNode_res.h"
+#include "uavcan.equipment.range_sensor.Measurement.h"
+#include "com.hex.equipment.flow.Measurement.h"
 
 /* Canard core and STM32 driver declarations */
 #include "drivers/dronecan/libcanard/canard.h"
@@ -38,6 +42,8 @@ extern "C" {
 /* INAV headers pulled in by dronecan.c — included here so the types are
    available when we define stub globals below. */
 #include "io/gps.h"
+#include "io/opflow.h"
+#include "io/rangefinder.h"
 #include "sensors/battery_sensor_dronecan.h"
 #include "fc/runtime_config.h"
 #include "sensors/diagnostics.h"
@@ -99,6 +105,25 @@ void dronecanGPSReceiveGNSSFix(const struct uavcan_equipment_gnss_Fix *p) { (voi
 void dronecanGPSReceiveGNSSFix2(const struct uavcan_equipment_gnss_Fix2 *p) { (void)p; }
 void dronecanGPSReceiveGNSSAuxiliary(const struct uavcan_equipment_gnss_Auxiliary *p) { (void)p; }
 void dronecanBatterySensorReceiveInfo(struct uavcan_equipment_power_BatteryInfo *p) { (void)p; }
+
+/* Optical flow and rangefinder receive stubs — record what the handlers forward */
+static int opflowReceiveCount = 0;
+static struct com_hex_equipment_flow_Measurement lastFlow;
+void dronecanOpflowReceiveMeasurement(const struct com_hex_equipment_flow_Measurement *p)
+{
+    opflowReceiveCount++;
+    lastFlow = *p;
+}
+
+static int rangefinderReceiveCount = 0;
+static uint8_t lastRangeNodeId = 0;
+static struct uavcan_equipment_range_sensor_Measurement lastRange;
+void dronecanRangefinderReceiveMeasurement(uint8_t sourceNodeId, const struct uavcan_equipment_range_sensor_Measurement *p)
+{
+    rangefinderReceiveCount++;
+    lastRangeNodeId = sourceNodeId;
+    lastRange = *p;
+}
 
 /* STM32 CAN driver stubs */
 int16_t canardSTM32CAN1_Init(uint32_t b) { (void)b; return CANARD_OK; }
@@ -488,6 +513,32 @@ TEST(DroneCANShouldAcceptTransfer, AcceptsRestartNodeResponse)
 
     EXPECT_TRUE(accept);
     EXPECT_EQ(signature, UAVCAN_PROTOCOL_RESTARTNODE_RESPONSE_SIGNATURE);
+}
+
+TEST(DroneCANShouldAcceptTransfer, AcceptsRangeSensorMeasurementBroadcast)
+{
+    uint64_t signature = 0;
+    bool accept = shouldAcceptTransfer(
+            nullptr, &signature,
+            UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_ID,
+            CanardTransferTypeBroadcast,
+            42);
+
+    EXPECT_TRUE(accept);
+    EXPECT_EQ(signature, UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_SIGNATURE);
+}
+
+TEST(DroneCANShouldAcceptTransfer, AcceptsFlowMeasurementBroadcast)
+{
+    uint64_t signature = 0;
+    bool accept = shouldAcceptTransfer(
+            nullptr, &signature,
+            COM_HEX_EQUIPMENT_FLOW_MEASUREMENT_ID,
+            CanardTransferTypeBroadcast,
+            42);
+
+    EXPECT_TRUE(accept);
+    EXPECT_EQ(signature, COM_HEX_EQUIPMENT_FLOW_MEASUREMENT_SIGNATURE);
 }
 
 /* =========================================================================
@@ -995,4 +1046,67 @@ TEST_F(DroneCANDispatchTest, DronecanUpdate_TimeoutCheckedAfterRxDrain_ResponseN
     const dronecanParamResult_t *r = &dronecanAsyncSlot.result.param;
     EXPECT_EQ(r->type,      (uint8_t)DRONECAN_PARAM_TYPE_INT);
     EXPECT_EQ(r->value_int, 7);
+}
+
+/* =========================================================================
+ * Optical flow / rangefinder broadcast dispatch
+ * ========================================================================= */
+
+TEST_F(DroneCANDispatchTest, FlowMeasurementIsDecodedAndForwarded)
+{
+    struct com_hex_equipment_flow_Measurement tx;
+    memset(&tx, 0, sizeof(tx));
+    tx.integration_interval = 0.02f;
+    tx.flow_integral[0] = 0.01f;
+    tx.flow_integral[1] = -0.03f;
+    tx.quality = 180;
+
+    uint8_t flow_buf[COM_HEX_EQUIPMENT_FLOW_MEASUREMENT_MAX_SIZE];
+    uint32_t encoded_len = com_hex_equipment_flow_Measurement_encode(&tx, flow_buf);
+
+    CanardRxTransfer xfer;
+    memset(&xfer, 0, sizeof(xfer));
+    xfer.transfer_type  = CanardTransferTypeBroadcast;
+    xfer.data_type_id   = COM_HEX_EQUIPMENT_FLOW_MEASUREMENT_ID;
+    xfer.source_node_id = 50;
+    xfer.payload_head   = flow_buf;
+    xfer.payload_len    = (uint16_t)encoded_len;
+
+    const int before = opflowReceiveCount;
+    onTransferReceived(&ins, &xfer);
+
+    ASSERT_EQ(opflowReceiveCount, before + 1);
+    EXPECT_FLOAT_EQ(lastFlow.integration_interval, 0.02f);
+    EXPECT_FLOAT_EQ(lastFlow.flow_integral[0], 0.01f);
+    EXPECT_FLOAT_EQ(lastFlow.flow_integral[1], -0.03f);
+    EXPECT_EQ(lastFlow.quality, 180);
+}
+
+TEST_F(DroneCANDispatchTest, RangeSensorMeasurementIsForwardedWithSourceNode)
+{
+    struct uavcan_equipment_range_sensor_Measurement tx;
+    memset(&tx, 0, sizeof(tx));
+    tx.sensor_id    = 3;
+    tx.reading_type = UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_VALID_RANGE;
+    tx.range        = 2.5f;
+
+    uint8_t range_buf[UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_MAX_SIZE];
+    uint32_t encoded_len = uavcan_equipment_range_sensor_Measurement_encode(&tx, range_buf);
+
+    CanardRxTransfer xfer;
+    memset(&xfer, 0, sizeof(xfer));
+    xfer.transfer_type  = CanardTransferTypeBroadcast;
+    xfer.data_type_id   = UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_ID;
+    xfer.source_node_id = 51;
+    xfer.payload_head   = range_buf;
+    xfer.payload_len    = (uint16_t)encoded_len;
+
+    const int before = rangefinderReceiveCount;
+    onTransferReceived(&ins, &xfer);
+
+    ASSERT_EQ(rangefinderReceiveCount, before + 1);
+    EXPECT_EQ(lastRangeNodeId, 51);
+    EXPECT_EQ(lastRange.sensor_id, 3);
+    EXPECT_EQ(lastRange.reading_type, UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_VALID_RANGE);
+    EXPECT_FLOAT_EQ(lastRange.range, 2.5f);
 }

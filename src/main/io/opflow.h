@@ -31,5 +31,9 @@
 
 extern virtualOpflowVTable_t opflowCxofVtable;
 extern virtualOpflowVTable_t opflowMSPVtable;
+extern virtualOpflowVTable_t opflowDronecanVtable;
+
+struct com_hex_equipment_flow_Measurement;
 
 void mspOpflowReceiveNewData(uint8_t * bufferPtr, unsigned int dataSize);
+void dronecanOpflowReceiveMeasurement(const struct com_hex_equipment_flow_Measurement * measurement);

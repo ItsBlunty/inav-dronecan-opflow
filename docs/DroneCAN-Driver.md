@@ -1087,6 +1087,8 @@ void broadcastNodeStatus(void) {
 **Integration:**
 - `src/main/io/gps_dronecan.c` - GPS provider integration
 - `src/main/sensors/battery_sensor_dronecan.c` - Battery sensor integration
+- `src/main/io/opflow_dronecan.c` - Optical flow integration
+- `src/main/io/rangefinder_dronecan.c` - Rangefinder integration
 
 **Tests:**
 - `src/test/unit/dronecan/*` - Unit tests for message handlers and integration

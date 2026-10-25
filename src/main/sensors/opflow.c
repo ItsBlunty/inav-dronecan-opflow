@@ -114,6 +114,14 @@ static bool opflowDetect(opflowDev_t * dev, uint8_t opflowHardwareToUse)
 #endif
             break;
 
+        case OPFLOW_DRONECAN:
+#if defined(USE_OPFLOW_DRONECAN)
+            if (virtualOpflowDetect(dev, &opflowDronecanVtable)) {
+                opflowHardware = OPFLOW_DRONECAN;
+            }
+#endif
+            break;
+
         case OPFLOW_NONE:
             opflowHardware = OPFLOW_NONE;
             break;

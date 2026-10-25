@@ -34,6 +34,10 @@ extern virtualRangefinderVTable_t rangefinderBenewakeVtable;
 extern virtualRangefinderVTable_t rangefinderUSD1Vtable;
 extern virtualRangefinderVTable_t rangefinderNanoradarVtable; //NRA15/NRA24
 extern virtualRangefinderVTable_t rangefinderFakeVtable;
+extern virtualRangefinderVTable_t rangefinderDronecanVtable;
+
+struct uavcan_equipment_range_sensor_Measurement;
 
 void mspRangefinderReceiveNewData(uint8_t * bufferPtr, unsigned int dataSize);
+void dronecanRangefinderReceiveMeasurement(uint8_t sourceNodeId, const struct uavcan_equipment_range_sensor_Measurement * measurement);
 void fakeRangefindersSetData(int32_t data);
