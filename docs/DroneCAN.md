@@ -89,7 +89,7 @@ save
 
 **`opflow_scale` must be 1.0.** DroneCAN flow modules report flow already calibrated in radians, so no scaling is needed. The default of 10.5 is for the CXOF sensor and would make flow speeds roughly ten times too small. Running the optical flow calibration should also give a value close to 1.0.
 
-**Check the axes before flying.** Mounting orientations differ between modules, so confirm `align_opflow` on the bench:
+**Mount the module facing down with its X arrow toward the nose** and leave `align_opflow = DEFAULT`. This was checked on an ARK Flow MR. For any other mounting, or a module without an arrow, set `align_opflow` to match. Either way, check the axes on the bench before flying:
 
 1. `set debug_mode = FLOW_RAW` and view the debug values in the Configurator.
 2. Hold the aircraft over a textured surface and roll it left and right in place, without moving it sideways. `debug[0]` (flow X) should follow `debug[2]` (body rate X), with the same sign and roughly the same size.

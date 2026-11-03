@@ -82,8 +82,11 @@ void dronecanOpflowReceiveMeasurement(const struct com_hex_equipment_flow_Measur
     // The sensor reports calibrated radians. opflow.c expects raw units that opflow_scale
     // converts to degrees, so pass degrees through and opflow_scale = 1.0 is exact
     sensorData.deltaTime = deltaTimeUs;
+    // flow_integral is a right-handed rotation about each body axis (PX4/ArduPilot convention).
+    // INAV's pitch rate has the opposite sign, so Y is negated here: a module mounted as its
+    // arrow shows then needs align_opflow = DEFAULT (checked on an ARK Flow MR)
     sensorData.flowRateRaw[0] = RADIANS_TO_DEGREES(measurement->flow_integral[0]);
-    sensorData.flowRateRaw[1] = RADIANS_TO_DEGREES(measurement->flow_integral[1]);
+    sensorData.flowRateRaw[1] = -RADIANS_TO_DEGREES(measurement->flow_integral[1]);
     sensorData.flowRateRaw[2] = 0;
     sensorData.quality = (int)measurement->quality * 100 / 255;
     hasNewData = true;

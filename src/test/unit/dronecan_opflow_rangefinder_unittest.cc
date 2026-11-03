@@ -92,7 +92,8 @@ TEST_F(DroneCANOpflowTest, MeasurementIsConvertedToDegreesOverSensorInterval)
     ASSERT_TRUE(opflowDronecanVtable.update(&data));
     EXPECT_EQ(data.deltaTime, 20000);
     EXPECT_NEAR(data.flowRateRaw[0], RADIANS_TO_DEGREES(0.01f), 1e-4f);
-    EXPECT_NEAR(data.flowRateRaw[1], RADIANS_TO_DEGREES(-0.02f), 1e-4f);
+    // Y is negated to match INAV's pitch rate sign
+    EXPECT_NEAR(data.flowRateRaw[1], RADIANS_TO_DEGREES(0.02f), 1e-4f);
     EXPECT_EQ(data.flowRateRaw[2], 0.0f);
     EXPECT_EQ(data.quality, 100);
 }
