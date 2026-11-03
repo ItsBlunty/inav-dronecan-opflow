@@ -31,6 +31,8 @@
 
 #include <dronecan_msgs.h>
 
+#include "build/debug.h"
+
 #include "drivers/rangefinder/rangefinder_virtual.h"
 #include "io/rangefinder.h"
 
@@ -79,27 +81,30 @@ static bool isFromLockedSensor(uint8_t sourceNodeId, uint8_t sensorId)
 
 void dronecanRangefinderReceiveMeasurement(uint8_t sourceNodeId, const struct uavcan_equipment_range_sensor_Measurement * measurement)
 {
+    static uint32_t acceptedCount = 0;
+    static uint32_t ignoredCount = 0;
+
     if (!isFromLockedSensor(sourceNodeId, measurement->sensor_id)) {
+        DEBUG_SET(DEBUG_AGL, 7, ++ignoredCount);
         return;
     }
 
-    switch (measurement->reading_type) {
-        case UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_VALID_RANGE: {
-            // Range is float16 on the wire, so it can be NaN or +inf: the comparisons are false
-            // for NaN and the upper bound keeps the cast defined
-            const float rangeCm = measurement->range * 100.0f;
-            sensorData = (rangeCm >= 1.0f && rangeCm < (float)INT32_MAX) ? (int32_t)rangeCm : RANGEFINDER_OUT_OF_RANGE;
-            break;
-        }
+    // Range is float16 on the wire, so it can be NaN or +inf: the comparisons are false
+    // for NaN and the upper bound keeps the cast defined
+    const float rangeCm = measurement->range * 100.0f;
+    const int32_t reportedRangeCm = (rangeCm >= 1.0f && rangeCm < (float)INT32_MAX) ? (int32_t)rangeCm : RANGEFINDER_OUT_OF_RANGE;
 
-        case UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_TOO_CLOSE:
-        case UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_TOO_FAR:
-            sensorData = RANGEFINDER_OUT_OF_RANGE;
-            break;
+    DEBUG_SET(DEBUG_AGL, 4, measurement->reading_type);
+    DEBUG_SET(DEBUG_AGL, 5, reportedRangeCm);
+    DEBUG_SET(DEBUG_AGL, 6, ++acceptedCount);
 
-        default:
-            // READING_TYPE_UNDEFINED: the sensor has no opinion, so don't disturb the last reading
-            return;
+    if (measurement->reading_type == UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_VALID_RANGE) {
+        sensorData = reportedRangeCm;
+    } else {
+        // TOO_CLOSE, TOO_FAR and UNDEFINED all mean there is no usable distance. UNDEFINED is
+        // what PX4 sends for an untrusted return: keeping the last reading would freeze the
+        // altitude and, after the hardware timeout, mark a sensor that is still talking as failed
+        sensorData = RANGEFINDER_OUT_OF_RANGE;
     }
 
     hasNewData = true;

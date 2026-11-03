@@ -17,9 +17,13 @@ extern "C" {
 #include "com.hex.equipment.flow.Measurement.h"
 #include "uavcan.equipment.range_sensor.Measurement.h"
 
+#include "build/debug.h"
 #include "common/maths.h"
 #include "io/opflow.h"
 #include "io/rangefinder.h"
+
+uint8_t debugMode = DEBUG_NONE;
+int32_t debug[DEBUG32_VALUE_COUNT];
 }
 
 #include "gtest/gtest.h"
@@ -216,11 +220,31 @@ TEST_F(DroneCANRangefinderTest, TooFarAndTooCloseAreOutOfRange)
     EXPECT_EQ(rangefinderDronecanVtable.read(), RANGEFINDER_OUT_OF_RANGE);
 }
 
-TEST_F(DroneCANRangefinderTest, UndefinedReadingIsIgnored)
+TEST_F(DroneCANRangefinderTest, UndefinedReadingIsOutOfRange)
 {
-    sendOverBus(UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_UNDEFINED, 2.0f);
+    sendOverBus(UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_VALID_RANGE, 0.31f);
+    EXPECT_EQ(rangefinderDronecanVtable.read(), 31);
 
-    EXPECT_EQ(rangefinderDronecanVtable.read(), RANGEFINDER_NO_NEW_DATA);
+    // A sensor that keeps sending untrusted readings must not leave the last good distance in place
+    sendOverBus(UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_UNDEFINED, 2.0f);
+    EXPECT_EQ(rangefinderDronecanVtable.read(), RANGEFINDER_OUT_OF_RANGE);
+}
+
+TEST_F(DroneCANRangefinderTest, AglDebugShowsWhatTheSensorSent)
+{
+    debugMode = DEBUG_AGL;
+
+    sendOverBus(UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_UNDEFINED, 0.5f);
+    EXPECT_EQ(debug[4], UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_UNDEFINED);
+    EXPECT_EQ(debug[5], 50);
+    const int32_t acceptedBefore = debug[6];
+
+    sendOverBus(UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_VALID_RANGE, 1.25f);
+    EXPECT_EQ(debug[4], UAVCAN_EQUIPMENT_RANGE_SENSOR_MEASUREMENT_READING_TYPE_VALID_RANGE);
+    EXPECT_EQ(debug[5], 125);
+    EXPECT_EQ(debug[6], acceptedBefore + 1);
+
+    debugMode = DEBUG_NONE;
 }
 
 TEST_F(DroneCANRangefinderTest, NonPositiveOrNonFiniteValidRangeIsOutOfRange)

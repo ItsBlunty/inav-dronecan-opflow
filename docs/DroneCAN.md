@@ -96,7 +96,16 @@ save
 3. Pitch it forward and back the same way. `debug[1]` should follow `debug[3]`.
 4. If a pair has opposite signs, or X follows the pitch rate instead of the roll rate, change `align_opflow` and repeat.
 
-The rangefinder follows the first sensor it hears (by node ID and `sensor_id`) and ignores any others on the bus.
+The rangefinder follows the first sensor it hears (by node ID and `sensor_id`) and ignores any others on the bus. Readings the sensor marks as too close, too far or undefined are treated as out of range.
+
+To see what the rangefinder is sending, `set debug_mode = AGL`:
+
+| Debug | Meaning |
+|---|---|
+| `debug[4]` | Reading type of the last message: 0 undefined, 1 valid, 2 too close, 3 too far |
+| `debug[5]` | Distance in that message, in cm, whatever its reading type |
+| `debug[6]` | Messages received from the followed sensor (should keep counting up) |
+| `debug[7]` | Messages ignored because they came from another sensor |
 
 ### Parameter Get/Set via DroneCAN
 
