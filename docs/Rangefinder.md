@@ -113,6 +113,36 @@ set nav_max_terrain_follow_alt = 100    # Max altitude in Surface mode (cm)
 
 **Note:** Surface mode is NOT available on fixed wing aircraft.
 
+### Terrain steps (window sills, table edges, raised floors)
+
+In Surface mode the throttle stick sets a height above whatever the rangefinder sees. When the ground under the aircraft changes height suddenly, for example a window sill passing underneath, the aircraft normally climbs or drops to keep that height above the new ground.
+
+`inav_surface_step_threshold` makes Surface mode treat a sudden jump as a change in the ground instead:
+
+```
+set inav_surface_step_threshold = 25    # cm, 0 = off (default)
+```
+
+- When the rangefinder reading moves more than the threshold away from the predicted height above ground for 3 readings in a row, all on the same side, it is accepted as a step. The height estimate moves onto the new ground at once, and the altitude target moves by the same amount, so the aircraft keeps its height in the air.
+- While those readings are being checked, the height estimate coasts on the accelerometer and barometer instead of blending in the jump. A single bad reading is ignored.
+- Crossing a sill gives one step down and one step back up, which cancel out.
+- Gentle slopes, and climbs or descents the aircraft makes itself, do not count as steps, and are followed as usual.
+- The held offset stays until the throttle stick moves by more than `alt_hold_deadband`. It then fades out at 50 cm/s, so the stick maps straight to height again without a jump.
+- The offset is limited to `nav_max_terrain_follow_alt`, and is cleared when Surface mode is switched off or the rangefinder stops being trusted.
+
+Pick a threshold well above the rangefinder's noise at your flying height. With `debug_mode = SURFACE_STEP` the debug values show:
+
+| Debug | Value |
+| --- | --- |
+| 0 | Reading minus predicted height above ground (cm) |
+| 1 | Readings in a row beyond the threshold |
+| 2 | Steps accepted since boot |
+| 3 | Size of the last step (cm) |
+| 4 | Offset being held (cm) |
+| 5 | 1 while the offset is fading out |
+| 6 | Height set by the throttle stick (cm) |
+| 7 | Height target including the offset (cm) |
+
 ## Connections
 
 ### I2C Rangefinders

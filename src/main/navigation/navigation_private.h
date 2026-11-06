@@ -547,6 +547,13 @@ typedef struct {
 
     uint8_t autoSpeedSpdSource;             // Auto Speed mode speed source
 
+    /* Surface hold terrain steps */
+    struct {
+        float                   offset;         // Added to the throttle-mapped surface target (cm)
+        int16_t                 throttle;       // Throttle command when the last step was taken
+        bool                    releasing;      // Pilot moved the throttle, offset is fading out
+    } surfaceStep;
+
     /* Internals & statistics */
     int16_t                     rcAdjustment[4];
     float                       totalTripDistance;
@@ -616,6 +623,7 @@ bool navigationMulticopterBrakingActive(void);
 bool navigationMulticopterBrakingBoostActive(void);
 
 bool adjustMulticopterAltitudeFromRCInput(void);
+void resetSurfaceStepOffset(void);
 bool adjustMulticopterHeadingFromRCInput(void);
 bool adjustMulticopterPositionFromRCInput(int16_t rcPitchAdjustment, int16_t rcRollAdjustment);
 

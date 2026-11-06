@@ -93,7 +93,7 @@ tables:
       "AUTOTRIM", "AUTOTUNE", "RATE_DYNAMICS", "LANDING", "POS_EST",
       "ADAPTIVE_FILTER", "HEADTRACKER", "GPS", "LULU", "SBUS2", "OSD_REFRESH",
       "MAG_CALIB", "VTOL_TRANSITION", "VTOL_MC_PROTECT", "TERRAIN_NAV", "ESC",
-      "FW_TURN", "MAG"]
+      "FW_TURN", "MAG", "SURFACE_STEP"]
   - name: vtol_mc_protection_mode
     values: ["OFF", "NAV", "NAV_AND_STABILIZED"]
   - name: aux_operator
@@ -2581,6 +2581,12 @@ groups:
         field: max_surface_altitude
         min: 0
         max: 1000
+      - name: inav_surface_step_threshold
+        description: "Rangefinder jump that SURFACE mode treats as a change in the ground (a window sill, a table edge, a raised floor) rather than a change in height. When the reading moves this far from the predicted height above ground for several readings in a row, the aircraft keeps its height in the air instead of climbing or dropping to follow the new ground, until the throttle stick is moved. 0 disables it. [cm]"
+        default_value: 0
+        field: surface_step_threshold
+        min: 0
+        max: 500
       - name: inav_w_z_surface_p
         description: "Weight of rangefinder measurements in estimated altitude. Setting is used on both airplanes and multirotors when rangefinder is present and Surface mode enabled"
         field: w_z_surface_p

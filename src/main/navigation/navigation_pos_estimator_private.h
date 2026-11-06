@@ -101,6 +101,7 @@ typedef struct {
     pt1Filter_t avgFilter;
     float       alt;            // Raw altitude measurement (cm)
     float       reliability;
+    bool        stepSuspect;    // Readings disagree with the AGL prediction, step not confirmed yet
 } navPositionEstimatorSURFACE_t;
 
 typedef struct {
@@ -126,6 +127,7 @@ typedef struct {
     float                   aglOffset;  // Offset between surface and pos.Z
     float                   aglAlt;
     float                   aglVel;
+    float                   aglStepPending; // Confirmed terrain steps not yet handed to the navigation controller (cm)
 
     // FLOW
     float                   flowCoordinates[2];

@@ -61,7 +61,7 @@ static pt1Filter_t estVelFilterState_X;
 static pt1Filter_t estVelFilterState_Y;
 static pt1Filter_t estVelFilterState_Z;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionEstimationConfig_t, positionEstimationConfig, PG_POSITION_ESTIMATION_CONFIG, 8);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionEstimationConfig_t, positionEstimationConfig, PG_POSITION_ESTIMATION_CONFIG, 9);
 
 PG_RESET_TEMPLATE(positionEstimationConfig_t, positionEstimationConfig,
         // Inertial position estimator parameters
@@ -98,8 +98,9 @@ PG_RESET_TEMPLATE(positionEstimationConfig_t, positionEstimationConfig,
 
         .default_alt_sensor = SETTING_INAV_DEFAULT_ALT_SENSOR_DEFAULT,
 #ifdef USE_GPS_FIX_ESTIMATION
-        .allow_gps_fix_estimation = SETTING_INAV_ALLOW_GPS_FIX_ESTIMATION_DEFAULT
+        .allow_gps_fix_estimation = SETTING_INAV_ALLOW_GPS_FIX_ESTIMATION_DEFAULT,
 #endif
+        .surface_step_threshold = SETTING_INAV_SURFACE_STEP_THRESHOLD_DEFAULT,
 );
 
 #define resetTimer(tim, currentTimeUs) { (tim)->deltaTime = 0; (tim)->lastTriggeredTime = currentTimeUs; }
@@ -930,6 +931,14 @@ float getEstimatedAglPosition(void) {
     return posEstimator.est.aglAlt;
 }
 
+// Hands over the terrain steps accepted since the last call, so the surface altitude target can move
+// by the same amount as the AGL estimate did
+float navEstimatorConsumeSurfaceStep(void) {
+    const float step = posEstimator.est.aglStepPending;
+    posEstimator.est.aglStepPending = 0;
+    return step;
+}
+
 bool isEstimatedAglTrusted(void) {
     return (posEstimator.est.aglQual == SURFACE_QUAL_HIGH) ? true : false;
 }
@@ -950,6 +959,8 @@ void initializePositionEstimator(void)
 
     posEstimator.est.aglAlt = 0;
     posEstimator.est.aglVel = 0;
+    posEstimator.est.aglStepPending = 0;
+    posEstimator.surface.stepSuspect = false;
 
     posEstimator.est.flowCoordinates[X] = 0;
     posEstimator.est.flowCoordinates[Y] = 0;

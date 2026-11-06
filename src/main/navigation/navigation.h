@@ -409,6 +409,7 @@ typedef struct positionEstimationConfig_s {
 #ifdef USE_GPS_FIX_ESTIMATION
     uint8_t allow_gps_fix_estimation;
 #endif
+    uint16_t surface_step_threshold;    // Rangefinder jump treated as a terrain step in surface hold (cm), 0 = off
 } positionEstimationConfig_t;
 
 PG_DECLARE(positionEstimationConfig_t, positionEstimationConfig);
@@ -879,6 +880,7 @@ bool isAdjustingPosition(void);
 bool isAdjustingHeading(void);
 
 float getEstimatedAglPosition(void);
+float navEstimatorConsumeSurfaceStep(void);
 bool isEstimatedAglTrusted(void);
 
 void checkManualEmergencyLandingControl(bool forcedActivation);

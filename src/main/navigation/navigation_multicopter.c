@@ -50,6 +50,7 @@
 
 #include "navigation/navigation.h"
 #include "navigation/navigation_private.h"
+#include "navigation/navigation_surface_step.h"
 #include "navigation/sqrt_controller.h"
 #include "navigation/navigation_vtol_mc_protection.h"
 
@@ -213,17 +214,51 @@ static void updateAltitudeThrottleController_MC(timeDelta_t deltaMicros)
     navigationVtolMcProtectionPublishThrottleDebug(&vtolMcThrottleBounds, posControl.rcAdjustment[THROTTLE]);
 }
 
+/*
+ * A terrain step offset holds the aircraft's height in the air after the ground under it changed. It
+ * stays until the pilot moves the throttle, then fades out so the stick maps to height directly again
+ * without a jump.
+ */
+static float updateSurfaceStepOffset(void)
+{
+    static timeMs_t lastUpdateMs = 0;
+    const timeMs_t currentTimeMs = millis();
+    const float dt = MIN(MS2S(currentTimeMs - lastUpdateMs), 0.1f);
+    lastUpdateMs = currentTimeMs;
+
+    if (posControl.surfaceStep.offset != 0.0f) {
+        if (!posControl.surfaceStep.releasing && ABS(rcCommand[THROTTLE] - posControl.surfaceStep.throttle) > rcControlsConfig()->alt_hold_deadband) {
+            posControl.surfaceStep.releasing = true;
+        }
+
+        if (posControl.surfaceStep.releasing) {
+            posControl.surfaceStep.offset = surfaceStepOffsetRelease(posControl.surfaceStep.offset, SURFACE_STEP_RELEASE_RATE_CMS * dt);
+        }
+    }
+
+    return posControl.surfaceStep.offset;
+}
+
 bool adjustMulticopterAltitudeFromRCInput(void)
 {
     if (posControl.flags.isTerrainFollowEnabled) {
-        const int16_t altTarget = scaleRange(rcCommand[THROTTLE], getThrottleIdleValue(), getMaxThrottle(), 0, navConfig()->general.max_terrain_follow_altitude);
+        const int16_t stickTarget = scaleRange(rcCommand[THROTTLE], getThrottleIdleValue(), getMaxThrottle(), 0, navConfig()->general.max_terrain_follow_altitude);
 
         // In terrain follow mode we apply different logic for terrain control
-        if (posControl.flags.estAglStatus == EST_TRUSTED && altTarget > 10) {
-            // We have solid terrain sensor signal - directly map throttle to altitude
+        if (posControl.flags.estAglStatus == EST_TRUSTED && stickTarget > 10) {
+            // We have solid terrain sensor signal - directly map throttle to altitude, shifted by any terrain step being held
+            const float altTarget = MAX(stickTarget + updateSurfaceStepOffset(), 0.0f);
             updateClimbRateToAltitudeController(0, altTarget, ROC_TO_ALT_TARGET);
+
+            DEBUG_SET(DEBUG_SURFACE_STEP, 4, posControl.surfaceStep.offset);
+            DEBUG_SET(DEBUG_SURFACE_STEP, 5, posControl.surfaceStep.releasing);
+            DEBUG_SET(DEBUG_SURFACE_STEP, 6, stickTarget);
+            DEBUG_SET(DEBUG_SURFACE_STEP, 7, altTarget);
         }
         else {
+            // No trusted ground reference (or landing): a held step no longer means anything
+            resetSurfaceStepOffset();
+
             int16_t climbRate = -50;
 
             // Increase descent rate when throttle stick below mid from min rate of 0.5m/s up to max 2 m/s

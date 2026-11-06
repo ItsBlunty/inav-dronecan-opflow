@@ -35,6 +35,7 @@
 #include "navigation/navigation.h"
 #include "navigation/navigation_private.h"
 #include "navigation/navigation_pos_estimator_private.h"
+#include "navigation/navigation_surface_step.h"
 
 #include "sensors/rangefinder.h"
 #include "sensors/barometer.h"
@@ -42,6 +43,48 @@
 extern navigationPosEstimator_t posEstimator;
 
 #ifdef USE_RANGEFINDER
+static surfaceStepDetector_t surfaceStepDetector;
+static uint32_t surfaceStepCount = 0;
+
+/*
+ * Checks a valid reading against the AGL prediction for a terrain step. A confirmed step moves the
+ * AGL estimate onto the new ground at once instead of blending toward it, and is queued for the
+ * navigation controller so the surface altitude target moves with it: the aircraft then holds its
+ * height in the air rather than climbing over a window sill or dropping off a table edge.
+ */
+static void updateSurfaceStepDetection(float newSurfaceAlt)
+{
+    const float threshold = positionEstimationConfig()->surface_step_threshold;
+
+    // Only a trusted AGL estimate is a meaningful prediction to compare against
+    if (threshold <= 0.0f || posEstimator.est.aglQual != SURFACE_QUAL_HIGH) {
+        surfaceStepDetectorReset(&surfaceStepDetector);
+        posEstimator.surface.stepSuspect = false;
+        return;
+    }
+
+    const float residual = newSurfaceAlt - posEstimator.est.aglAlt;
+    const float step = surfaceStepDetectorUpdate(&surfaceStepDetector, residual, threshold);
+
+    if (step != 0.0f) {
+        posEstimator.est.aglAlt += step;
+        posEstimator.est.aglOffset -= step;
+        posEstimator.est.aglStepPending += step;
+
+        // The averaged reading feeds the AGL offset and the next estimate reset, so it moves too
+        pt1FilterReset(&posEstimator.surface.avgFilter, pt1FilterGetLastOutput(&posEstimator.surface.avgFilter) + step);
+
+        surfaceStepCount++;
+        DEBUG_SET(DEBUG_SURFACE_STEP, 3, step);
+    }
+
+    posEstimator.surface.stepSuspect = surfaceStepDetectorIsSuspect(&surfaceStepDetector);
+
+    DEBUG_SET(DEBUG_SURFACE_STEP, 0, residual);
+    DEBUG_SET(DEBUG_SURFACE_STEP, 1, surfaceStepDetector.count);
+    DEBUG_SET(DEBUG_SURFACE_STEP, 2, surfaceStepCount);
+}
+
 /**
  * Read surface and update alt/vel topic
  *  Function is called from TASK_RANGEFINDER at arbitrary rate - as soon as new measurements are available
@@ -58,6 +101,12 @@ void updatePositionEstimator_SurfaceTopic(timeUs_t currentTimeUs, float newSurfa
         newReliabilityMeasurement = 1;
         surfaceMeasurementWithinRange = true;
         posEstimator.surface.alt = newSurfaceAlt;
+        // Before the averaging filter below, so a confirmed step shifts the average it then updates
+        updateSurfaceStepDetection(newSurfaceAlt);
+    }
+    else {
+        surfaceStepDetectorReset(&surfaceStepDetector);
+        posEstimator.surface.stepSuspect = false;
     }
 
     /* Reliability is a measure of confidence of rangefinder measurement. It's increased with each valid sample and decreased with each invalid sample */
@@ -143,7 +192,10 @@ void estimationCalculateAGL(estimationContext_t * ctx)
         posEstimator.est.aglVel += posEstimator.imu.accelNEU.z * ctx->dt * posEstimator.imu.accWeightFactor;
 
         // Apply correction
-        if (posEstimator.est.aglQual == SURFACE_QUAL_HIGH) {
+        if (posEstimator.est.aglQual == SURFACE_QUAL_HIGH && posEstimator.surface.stepSuspect) {
+            // A possible terrain step: coast on the inertial prediction until it is confirmed or rejected
+        }
+        else if (posEstimator.est.aglQual == SURFACE_QUAL_HIGH) {
             // Correct estimate from rangefinder
             const float surfaceResidual = posEstimator.surface.alt - posEstimator.est.aglAlt;
             const float bellCurveScaler = scaleRangef(bellCurve(surfaceResidual, 75.0f), 0.0f, 1.0f, 0.1f, 1.0f);
@@ -160,7 +212,7 @@ void estimationCalculateAGL(estimationContext_t * ctx)
             // Correct estimate from altitude fused from rangefinder and global altitude
             const float estAltResidual = (posEstimator.est.pos.z - posEstimator.est.aglOffset) - posEstimator.est.aglAlt;
             const float surfaceResidual = posEstimator.surface.alt - posEstimator.est.aglAlt;
-            const float surfaceWeightScaler = scaleRangef(bellCurve(surfaceResidual, 50.0f), 0.0f, 1.0f, 0.1f, 1.0f) * posEstimator.surface.reliability;
+            const float surfaceWeightScaler = posEstimator.surface.stepSuspect ? 0.0f : scaleRangef(bellCurve(surfaceResidual, 50.0f), 0.0f, 1.0f, 0.1f, 1.0f) * posEstimator.surface.reliability;
             const float mixedResidual = surfaceResidual * surfaceWeightScaler + estAltResidual * (1.0f - surfaceWeightScaler);
 
             posEstimator.est.aglAlt += mixedResidual * positionEstimationConfig()->w_z_surface_p * ctx->dt;

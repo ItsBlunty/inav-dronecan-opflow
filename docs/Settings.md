@@ -803,6 +803,7 @@ Defines debug values exposed in debug variables (developer / debugging setting)
 | ESC |  |
 | FW_TURN |  |
 | MAG |  |
+| SURFACE_STEP |  |
 
 ---
 
@@ -2512,6 +2513,16 @@ Allows to chose when the home position is reset. Can help prevent resetting home
 | NEVER |  |
 | FIRST_ARM | Default |
 | EACH_ARM |  |
+
+---
+
+### inav_surface_step_threshold
+
+Rangefinder jump that SURFACE mode treats as a change in the ground (a window sill, a table edge, a raised floor) rather than a change in height. When the reading moves this far from the predicted height above ground for several readings in a row, the aircraft keeps its height in the air instead of climbing or dropping to follow the new ground, until the throttle stick is moved. 0 disables it. [cm]
+
+| Default | Min | Max |
+| --- | --- | --- |
+| 0 | 0 | 500 |
 
 ---
 

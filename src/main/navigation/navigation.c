@@ -4331,6 +4331,21 @@ void updateActualAltitudeAndClimbRate(bool estimateValid, float newAltitude, flo
     posControl.actualState.agl.pos.z = surfaceDistance;
     posControl.actualState.agl.vel.z = surfaceVelocity;
 
+#ifdef USE_RANGEFINDER
+    // The AGL estimate just jumped onto new ground: move the surface target by the same amount, in the
+    // same update, so the altitude error and with it the aircraft's height in the air are unchanged
+    const float surfaceStep = navEstimatorConsumeSurfaceStep();
+    if (surfaceStep != 0.0f && estimateValid && surfaceStatus == EST_TRUSTED && posControl.flags.isTerrainFollowEnabled) {
+        const float maxOffset = navConfig()->general.max_terrain_follow_altitude;
+        const float newOffset = constrainf(posControl.surfaceStep.offset + surfaceStep, -maxOffset, maxOffset);
+
+        posControl.desiredState.pos.z += newOffset - posControl.surfaceStep.offset;
+        posControl.surfaceStep.offset = newOffset;
+        posControl.surfaceStep.throttle = rcCommand[THROTTLE];
+        posControl.surfaceStep.releasing = false;
+    }
+#endif
+
     posControl.actualState.vel3D = calc_length_pythagorean_2D(posControl.actualState.velXY, posControl.actualState.abs.vel.z);
 
     // Update altitude that would be used when executing RTH
@@ -5180,10 +5195,17 @@ void updateClimbRateToAltitudeController(float desiredClimbRate, float targetAlt
     }
 }
 
+void resetSurfaceStepOffset(void)
+{
+    posControl.surfaceStep.offset = 0.0f;
+    posControl.surfaceStep.releasing = false;
+}
+
 static void resetAltitudeController(bool useTerrainFollowing)
 {
     // Set terrain following flag
     posControl.flags.isTerrainFollowEnabled = useTerrainFollowing;
+    resetSurfaceStepOffset();
 
     if (STATE(FIXED_WING_LEGACY)) {
         resetFixedWingAltitudeController();
