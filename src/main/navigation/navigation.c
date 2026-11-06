@@ -4292,6 +4292,16 @@ void updateActualHorizontalPositionAndVelocity(bool estPosValid, bool estVelVali
 
     posControl.actualState.velXY = calc_length_pythagorean_2D(newVelX, newVelY);
 
+    // The estimate just jumped from flow onto GPS. Position hold and course hold targets were set
+    // relative to where the aircraft was, so they move with it; RTH and waypoint targets are real
+    // places and stay put
+    float handoverShiftX, handoverShiftY;
+    if (navEstimatorConsumeGpsHandover(&handoverShiftX, &handoverShiftY) &&
+        (FLIGHT_MODE(NAV_POSHOLD_MODE) || FLIGHT_MODE(NAV_COURSE_HOLD_MODE))) {
+        posControl.desiredState.pos.x += handoverShiftX;
+        posControl.desiredState.pos.y += handoverShiftY;
+    }
+
     // CASE 1: POS & VEL valid
     if (estPosValid && estVelValid) {
         posControl.flags.estPosStatus = EST_TRUSTED;

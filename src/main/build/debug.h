@@ -88,6 +88,7 @@ typedef enum {
     DEBUG_FW_TURN,
     DEBUG_MAG,
     DEBUG_SURFACE_STEP,
+    DEBUG_GPS_FLOW,
     DEBUG_COUNT // also update debugModeNames in cli.c
 } debugType_e;
 

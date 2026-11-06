@@ -644,6 +644,8 @@ main_sources(COMMON_SRC
     navigation/navigation_pos_estimator_private.h
     navigation/navigation_pos_estimator_agl.c
     navigation/navigation_pos_estimator_flow.c
+    navigation/navigation_gps_flow_select.c
+    navigation/navigation_gps_flow_select.h
     navigation/navigation_surface_step.c
     navigation/navigation_surface_step.h
     navigation/navigation_private.h

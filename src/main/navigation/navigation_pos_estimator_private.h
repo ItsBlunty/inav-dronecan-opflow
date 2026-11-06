@@ -131,6 +131,7 @@ typedef struct {
 
     // FLOW
     float                   flowCoordinates[2];
+    float                   gpsHandoverPending[2];  // Position jumps on handing position back to GPS, not yet given to navigation (cm)
 
     // COURSE
     int16_t     cog;    // course over ground (decidegrees)
@@ -196,4 +197,6 @@ extern navigationPosEstimator_t posEstimator;
 extern float updateEPE(const float oldEPE, const float dt, const float newEPE, const float w);
 extern void estimationCalculateAGL(estimationContext_t * ctx);
 extern bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx);
+extern bool estimationIsFlowUsable(const estimationContext_t * ctx);
+extern void estimationGetFlowVelocity(fpVector3_t * flowVel);
 

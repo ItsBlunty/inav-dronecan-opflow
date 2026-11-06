@@ -35,6 +35,9 @@ set_property(SOURCE maths_unittest.cc PROPERTY depends "common/maths.c")
 set_property(SOURCE navigation_fixedwing_turn_math_unittest.cc PROPERTY depends
     "navigation/navigation_fixedwing_turn_math.c" "common/maths.c")
 
+set_property(SOURCE navigation_gps_flow_select_unittest.cc PROPERTY depends
+    "navigation/navigation_gps_flow_select.c")
+
 set_property(SOURCE navigation_surface_step_unittest.cc PROPERTY depends
     "navigation/navigation_surface_step.c")
 

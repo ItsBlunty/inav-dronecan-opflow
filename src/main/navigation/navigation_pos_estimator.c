@@ -45,6 +45,7 @@
 #include "navigation/navigation.h"
 #include "navigation/navigation_private.h"
 #include "navigation/navigation_pos_estimator_private.h"
+#include "navigation/navigation_gps_flow_select.h"
 
 #include "sensors/acceleration.h"
 #include "sensors/barometer.h"
@@ -60,6 +61,15 @@ static float initialBaroAltitudeOffset = 0.0f;
 static pt1Filter_t estVelFilterState_X;
 static pt1Filter_t estVelFilterState_Y;
 static pt1Filter_t estVelFilterState_Z;
+
+#if defined(USE_OPFLOW) && defined(USE_RANGEFINDER)
+#define GPS_FLOW_MISMATCH_F_CUT_HZ  1.0f
+
+static gpsFlowSelector_t gpsFlowSelector;
+static pt1Filter_t gpsFlowMismatchFilter[2];
+static bool flowWasCarryingPosition = false;
+static uint32_t gpsHandoverCount = 0;
+#endif
 
 PG_REGISTER_WITH_RESET_TEMPLATE(positionEstimationConfig_t, positionEstimationConfig, PG_POSITION_ESTIMATION_CONFIG, 9);
 
@@ -101,6 +111,7 @@ PG_RESET_TEMPLATE(positionEstimationConfig_t, positionEstimationConfig,
         .allow_gps_fix_estimation = SETTING_INAV_ALLOW_GPS_FIX_ESTIMATION_DEFAULT,
 #endif
         .surface_step_threshold = SETTING_INAV_SURFACE_STEP_THRESHOLD_DEFAULT,
+        .flow_gps_max_eph = SETTING_INAV_FLOW_GPS_MAX_EPH_DEFAULT,
 );
 
 #define resetTimer(tim, currentTimeUs) { (tim)->deltaTime = 0; (tim)->lastTriggeredTime = currentTimeUs; }
@@ -744,6 +755,96 @@ static bool estimationCalculateCorrection_XY_GPS(estimationContext_t * ctx)
  * Calculate next estimate using IMU and apply corrections from reference sensors (GPS, BARO etc)
  *  Function is called at main loop rate
  */
+#if defined(USE_OPFLOW) && defined(USE_RANGEFINDER)
+/*
+ * Decides whether GPS or optical flow carries horizontal position (see navigation_gps_flow_select.h).
+ * Rejecting GPS clears its XY validity for this update, so the flow correction takes over.
+ */
+static void selectHorizontalPositionSource(estimationContext_t * ctx, timeUs_t currentTimeUs)
+{
+    const float maxEph = positionEstimationConfig()->flow_gps_max_eph;
+    // Without dead reckoning flow only corrects velocity, which is no replacement for GPS position
+    const bool flowUsable = estimationIsFlowUsable(ctx) && positionEstimationConfig()->allow_dead_reckoning;
+
+    gpsFlowSelectorInput_t input = {
+        .flowUsable = flowUsable,
+        .gpsAvailable = (ctx->newFlags & EST_GPS_XY_VALID) != 0,
+        .gpsEph = posEstimator.gps.eph,
+        .speedCompareValid = false,
+        .speedMismatch = 0.0f,
+    };
+
+    bool compared = false;
+    if (maxEph > 0.0f && input.flowUsable && input.gpsAvailable) {
+        fpVector3_t flowVel;
+        estimationGetFlowVelocity(&flowVel);
+
+        const float gpsSpeed = calc_length_pythagorean_2D(posEstimator.gps.vel.x, posEstimator.gps.vel.y);
+        const float flowSpeed = calc_length_pythagorean_2D(flowVel.x, flowVel.y);
+
+        // Flow saturates when flying fast and low, so only hover and slow flight are compared
+        if (gpsSpeed < GPS_FLOW_COMPARE_MAX_SPEED_CMS && flowSpeed < GPS_FLOW_COMPARE_MAX_SPEED_CMS) {
+            const float diffX = pt1FilterApply3(&gpsFlowMismatchFilter[X], posEstimator.gps.vel.x - flowVel.x, ctx->dt);
+            const float diffY = pt1FilterApply3(&gpsFlowMismatchFilter[Y], posEstimator.gps.vel.y - flowVel.y, ctx->dt);
+            input.speedCompareValid = true;
+            input.speedMismatch = calc_length_pythagorean_2D(diffX, diffY);
+            compared = true;
+        }
+    }
+
+    if (!compared) {
+        pt1FilterReset(&gpsFlowMismatchFilter[X], 0.0f);
+        pt1FilterReset(&gpsFlowMismatchFilter[Y], 0.0f);
+    }
+
+    if (gpsFlowSelectorUpdate(&gpsFlowSelector, &input, maxEph, US2MS(currentTimeUs))) {
+        ctx->newFlags &= ~EST_GPS_XY_VALID;
+    }
+
+    DEBUG_SET(DEBUG_GPS_FLOW, 0, posEstimator.gps.eph);
+    DEBUG_SET(DEBUG_GPS_FLOW, 1, input.speedCompareValid ? input.speedMismatch : -1);
+    DEBUG_SET(DEBUG_GPS_FLOW, 2, gpsFlowSelector.gpsRejected);
+    DEBUG_SET(DEBUG_GPS_FLOW, 3, gpsFlowSelector.reasons);
+    DEBUG_SET(DEBUG_GPS_FLOW, 4, flowUsable);
+}
+
+/*
+ * When GPS takes position back from flow, the flow-carried estimate can be metres from the GPS
+ * position. Jumping the estimate onto GPS and handing the same jump to navigation lets position hold
+ * move its target with it, instead of flying the aircraft across the room to where GPS puts the old
+ * hold point. Also keeps the flow position following the estimate while GPS is in use, so flow takes
+ * over from wherever the aircraft is.
+ */
+static void handleGpsFlowHandover(const estimationContext_t * ctx)
+{
+    const bool gpsXYUsed = (ctx->newFlags & EST_GPS_XY_VALID) != 0;
+    const bool enabled = positionEstimationConfig()->flow_gps_max_eph > 0;
+
+    if (gpsXYUsed && flowWasCarryingPosition && enabled && (ctx->newFlags & EST_XY_VALID)) {
+        const float shiftX = posEstimator.gps.pos.x - posEstimator.est.pos.x;
+        const float shiftY = posEstimator.gps.pos.y - posEstimator.est.pos.y;
+
+        posEstimator.est.pos.x = posEstimator.gps.pos.x;
+        posEstimator.est.pos.y = posEstimator.gps.pos.y;
+        posEstimator.est.gpsHandoverPending[X] += shiftX;
+        posEstimator.est.gpsHandoverPending[Y] += shiftY;
+
+        gpsHandoverCount++;
+        DEBUG_SET(DEBUG_GPS_FLOW, 6, calc_length_pythagorean_2D(shiftX, shiftY));
+    }
+
+    if (gpsXYUsed) {
+        posEstimator.est.flowCoordinates[X] = posEstimator.est.pos.x;
+        posEstimator.est.flowCoordinates[Y] = posEstimator.est.pos.y;
+    }
+
+    flowWasCarryingPosition = !gpsXYUsed && estimationIsFlowUsable(ctx) && positionEstimationConfig()->allow_dead_reckoning;
+
+    DEBUG_SET(DEBUG_GPS_FLOW, 5, gpsHandoverCount);
+    DEBUG_SET(DEBUG_GPS_FLOW, 7, gpsXYUsed ? 1 : (flowWasCarryingPosition ? 2 : 0));
+}
+#endif
+
 static RP2350_FAST_CODE void updateEstimatedTopic(timeUs_t currentTimeUs)
 {
     estimationContext_t ctx;
@@ -771,6 +872,10 @@ static RP2350_FAST_CODE void updateEstimatedTopic(timeUs_t currentTimeUs)
     ctx.newEPV = posEstimator.est.epv + ((posEstimator.est.epv <= max_eph_epv && ZSensorUpdateTimeout) ? 100.0f * ctx.dt : 0.0f);
 
     ctx.newFlags = calculateCurrentValidityFlags(currentTimeUs);
+#if defined(USE_OPFLOW) && defined(USE_RANGEFINDER)
+    selectHorizontalPositionSource(&ctx, currentTimeUs);
+    handleGpsFlowHandover(&ctx);
+#endif
     vectorZero(&ctx.estPosCorr);
     vectorZero(&ctx.estVelCorr);
     vectorZero(&ctx.accBiasCorr);
@@ -931,6 +1036,15 @@ float getEstimatedAglPosition(void) {
     return posEstimator.est.aglAlt;
 }
 
+// Hands over the position jumps made when GPS took position back from flow since the last call
+bool navEstimatorConsumeGpsHandover(float *shiftX, float *shiftY) {
+    *shiftX = posEstimator.est.gpsHandoverPending[X];
+    *shiftY = posEstimator.est.gpsHandoverPending[Y];
+    posEstimator.est.gpsHandoverPending[X] = 0;
+    posEstimator.est.gpsHandoverPending[Y] = 0;
+    return *shiftX != 0.0f || *shiftY != 0.0f;
+}
+
 // Hands over the terrain steps accepted since the last call, so the surface altitude target can move
 // by the same amount as the AGL estimate did
 float navEstimatorConsumeSurfaceStep(void) {
@@ -964,6 +1078,8 @@ void initializePositionEstimator(void)
 
     posEstimator.est.flowCoordinates[X] = 0;
     posEstimator.est.flowCoordinates[Y] = 0;
+    posEstimator.est.gpsHandoverPending[X] = 0;
+    posEstimator.est.gpsHandoverPending[Y] = 0;
 
     posEstimator.imu.accWeightFactor = 0;
 
@@ -982,6 +1098,11 @@ void initializePositionEstimator(void)
     pt1FilterSetCutoff(&estVelFilterState_X, INAV_EST_VEL_F_CUT_HZ);
     pt1FilterSetCutoff(&estVelFilterState_Y, INAV_EST_VEL_F_CUT_HZ);
     pt1FilterSetCutoff(&estVelFilterState_Z, INAV_EST_VEL_F_CUT_HZ);
+#if defined(USE_OPFLOW) && defined(USE_RANGEFINDER)
+    pt1FilterSetCutoff(&gpsFlowMismatchFilter[X], GPS_FLOW_MISMATCH_F_CUT_HZ);
+    pt1FilterSetCutoff(&gpsFlowMismatchFilter[Y], GPS_FLOW_MISMATCH_F_CUT_HZ);
+    gpsFlowSelectorReset(&gpsFlowSelector);
+#endif
 }
 
 /**

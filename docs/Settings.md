@@ -804,6 +804,7 @@ Defines debug values exposed in debug variables (developer / debugging setting)
 | FW_TURN |  |
 | MAG |  |
 | SURFACE_STEP |  |
+| GPS_FLOW |  |
 
 ---
 
@@ -2459,6 +2460,16 @@ Sets the default altitude sensor to use. Settings GPS and BARO always use both s
 | BARO |  |
 | GPS_ONLY |  |
 | BARO_ONLY |  |
+
+---
+
+### inav_flow_gps_max_eph
+
+GPS horizontal accuracy (EPH) beyond which optical flow carries horizontal position instead of GPS, while flow is usable: healthy, rangefinder within inav_max_surface_altitude and inav_allow_dead_reckoning ON. GPS is also set aside while its velocity disagrees with flow velocity, which catches reflected signals near buildings that still report a good accuracy. GPS is used again once its accuracy has stayed below two thirds of this value for 3 seconds. Without usable flow, GPS is used as normal. 0 disables it. [cm]
+
+| Default | Min | Max |
+| --- | --- | --- |
+| 0 | 0 | 5000 |
 
 ---
 

@@ -59,7 +59,7 @@ void updatePositionEstimator_OpticalFlowTopic(timeUs_t currentTimeUs)
 }
 #endif
 
-bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
+bool estimationIsFlowUsable(const estimationContext_t * ctx)
 {
 #if defined(USE_RANGEFINDER) && defined(USE_OPFLOW)
     if (!((ctx->newFlags & EST_FLOW_VALID) && (ctx->newFlags & EST_SURFACE_VALID) && (ctx->newFlags & EST_Z_VALID))) {
@@ -67,9 +67,28 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
     }
 
     // FIXME: flow may use AGL estimate if available
-    const bool canUseFlow = (posEstimator.surface.reliability >= RANGEFINDER_RELIABILITY_LOW_THRESHOLD);
+    return posEstimator.surface.reliability >= RANGEFINDER_RELIABILITY_LOW_THRESHOLD;
+#else
+    UNUSED(ctx);
+    return false;
+#endif
+}
 
-    if (!canUseFlow) {
+// Linear velocity in earth frame (cm/s) from the latest flow and gyro rates and the distance to the ground
+void estimationGetFlowVelocity(fpVector3_t * flowVel)
+{
+    // Technically we should calculate arc length here, but for fast sampling this is accurate enough
+    flowVel->x = - (posEstimator.flow.flowRate[Y] - posEstimator.flow.bodyRate[Y]) * posEstimator.surface.alt;
+    flowVel->y =   (posEstimator.flow.flowRate[X] - posEstimator.flow.bodyRate[X]) * posEstimator.surface.alt;
+    flowVel->z =    posEstimator.est.vel.z;
+
+    imuTransformVectorBodyToEarth(flowVel);
+}
+
+bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
+{
+#if defined(USE_RANGEFINDER) && defined(USE_OPFLOW)
+    if (!estimationIsFlowUsable(ctx)) {
         return false;
     }
 
@@ -80,16 +99,9 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
     opflow.updateDt = 0.0f;
     const float dt = posEstimator.flow.updateDt;
 
-    // Calculate linear velocity based on angular velocity and altitude
-    // Technically we should calculate arc length here, but for fast sampling this is accurate enough
-    fpVector3_t flowVel = {
-        .x = - (posEstimator.flow.flowRate[Y] - posEstimator.flow.bodyRate[Y]) * posEstimator.surface.alt,
-        .y =   (posEstimator.flow.flowRate[X] - posEstimator.flow.bodyRate[X]) * posEstimator.surface.alt,
-        .z =    posEstimator.est.vel.z
-    };
-
-    // At this point flowVel will hold linear velocities in earth frame
-    imuTransformVectorBodyToEarth(&flowVel);
+    // Calculate linear velocity based on angular velocity and altitude, in earth frame
+    fpVector3_t flowVel;
+    estimationGetFlowVelocity(&flowVel);
 
     // Calculate velocity correction
     const float flowVelXInnov = flowVel.x - posEstimator.est.vel.x;

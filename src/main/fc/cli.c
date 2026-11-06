@@ -239,7 +239,8 @@ static const char *debugModeNames[DEBUG_COUNT] = {
     "ESC",
     "FW_TURN",
     "MAG",
-    "SURFACE_STEP"
+    "SURFACE_STEP",
+    "GPS_FLOW"
 };
 
 /* Sensor names (used in lookup tables for *_hardware settings and in status

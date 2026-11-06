@@ -173,6 +173,39 @@ When a rangefinder is combined with an optical flow sensor:
 
 See wiki for optical flow setup: https://github.com/iNavFlight/inav/wiki/Optic-Flow-and-Rangefinder
 
+### Poor GPS: letting flow take over
+
+Normally GPS carries horizontal position whenever its reported accuracy is within `inav_max_eph_epv` (10 m by default), and flow is only used once GPS is lost. Indoors or next to buildings GPS can wander by metres while still counting as valid. `inav_flow_gps_max_eph` lets flow take over sooner:
+
+```
+set inav_allow_dead_reckoning = ON     # required: flow position needs it
+set inav_flow_gps_max_eph = 200        # cm, 0 = off (default)
+```
+
+While flow is usable (sensor healthy, flow quality good, rangefinder within `inav_max_surface_altitude` and `inav_allow_dead_reckoning` ON), GPS is set aside for horizontal position when either:
+
+- its reported horizontal accuracy (EPH) has been worse than `inav_flow_gps_max_eph` for 0.5 s, or
+- its velocity has disagreed with flow velocity by more than 0.5 m/s for 1 s. This catches reflected signals that still report a good accuracy. It is only checked below 3 m/s, where flow does not saturate.
+
+GPS is used again once its accuracy has stayed below two thirds of the threshold for 3 s and the velocities agree, so a doorway does not make it switch back and forth. GPS that comes back while flow is carrying position has to pass the same test.
+
+When GPS takes over again, the flow-carried position can be metres from where GPS puts the aircraft. The position estimate jumps onto GPS, and in POSHOLD and course hold the hold target moves by the same amount, so the aircraft stays where it is. RTH and waypoint targets are real places and do not move.
+
+Without usable flow (too high, rangefinder out of range, no texture), GPS is used as normal however poor it is. GPS altitude, home position and RTH are not affected.
+
+Pick the threshold from what your GPS reports: with `debug_mode = GPS_FLOW`, debug 0 shows the accuracy in cm. Set it above what you see in open sky, so flow is not used outdoors without reason.
+
+| Debug | Value |
+| --- | --- |
+| 0 | GPS reported horizontal accuracy (cm) |
+| 1 | Filtered GPS minus flow speed (cm/s), -1 when not compared |
+| 2 | 1 while GPS is set aside |
+| 3 | Reasons: 1 = accuracy, 2 = speed disagreement, 4 = no GPS |
+| 4 | 1 while flow is usable |
+| 5 | Handovers back to GPS since boot |
+| 6 | Size of the last handover jump (cm) |
+| 7 | Position source: 1 = GPS, 2 = flow, 0 = neither |
+
 ## Constraints
 
 **Not Supported:**

@@ -410,6 +410,7 @@ typedef struct positionEstimationConfig_s {
     uint8_t allow_gps_fix_estimation;
 #endif
     uint16_t surface_step_threshold;    // Rangefinder jump treated as a terrain step in surface hold (cm), 0 = off
+    uint16_t flow_gps_max_eph;          // GPS accuracy beyond which usable optical flow carries position instead (cm), 0 = off
 } positionEstimationConfig_t;
 
 PG_DECLARE(positionEstimationConfig_t, positionEstimationConfig);
@@ -881,6 +882,7 @@ bool isAdjustingHeading(void);
 
 float getEstimatedAglPosition(void);
 float navEstimatorConsumeSurfaceStep(void);
+bool navEstimatorConsumeGpsHandover(float *shiftX, float *shiftY);
 bool isEstimatedAglTrusted(void);
 
 void checkManualEmergencyLandingControl(bool forcedActivation);
