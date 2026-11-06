@@ -26,7 +26,7 @@
  *
  * INAV normally uses GPS whenever its reported accuracy is within inav_max_eph_epv (10 m by default),
  * which indoors or next to buildings means following a GPS position that wanders by metres while the
- * flow sensor knows better. While flow is usable, this rejects GPS on either of:
+ * flow sensor knows better. While flow is usable, this rejects GPS (and its altitude) on either of:
  *  - its reported horizontal accuracy (EPH) being worse than a threshold, or
  *  - GPS velocity disagreeing with flow velocity, which catches reflected signals that still report a
  *    good accuracy.

@@ -191,7 +191,9 @@ GPS is used again once its accuracy has stayed below two thirds of the threshold
 
 When GPS takes over again, the flow-carried position can be metres from where GPS puts the aircraft. The position estimate jumps onto GPS, and in POSHOLD and course hold the hold target moves by the same amount, so the aircraft stays where it is. RTH and waypoint targets are real places and do not move.
 
-Without usable flow (too high, rangefinder out of range, no texture), GPS is used as normal however poor it is. GPS altitude, home position and RTH are not affected.
+While GPS is set aside, its altitude is not used either (as long as the barometer works), so a wandering GPS altitude does not pull the height estimate.
+
+Without usable flow (too high, rangefinder out of range, no texture), GPS is used as normal however poor it is. Home position and RTH are not affected.
 
 Pick the threshold from what your GPS reports: with `debug_mode = GPS_FLOW`, debug 0 shows the accuracy in cm. Set it above what you see in open sky, so flow is not used outdoors without reason.
 

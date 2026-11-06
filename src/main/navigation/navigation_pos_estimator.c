@@ -799,6 +799,12 @@ static void selectHorizontalPositionSource(estimationContext_t * ctx, timeUs_t c
 
     if (gpsFlowSelectorUpdate(&gpsFlowSelector, &input, maxEph, US2MS(currentTimeUs))) {
         ctx->newFlags &= ~EST_GPS_XY_VALID;
+
+        // GPS that is too poor for horizontal position has an even worse altitude, and by default it
+        // is blended into the altitude estimate. Leave altitude to the barometer while it works
+        if (ctx->newFlags & EST_BARO_VALID) {
+            ctx->newFlags &= ~EST_GPS_Z_VALID;
+        }
     }
 
     DEBUG_SET(DEBUG_GPS_FLOW, 0, posEstimator.gps.eph);
